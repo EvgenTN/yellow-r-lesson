@@ -2,10 +2,10 @@ const canvas = document.createElement('canvas');
 document.body.appendChild(canvas);
 
 var screen = {
-  width: 40 * 3,
-  height: 41 * 3,
-  zoom: 6,
-  scale: 3,
+  width: 40 * 18,
+  height: 41 * 18,
+  zoom: 1,
+  scale: 18,
 }
 
 canvas.width = screen.width;
@@ -22,15 +22,27 @@ function clear() {
   context.fillRect(0, 0, screen.width, screen.height);
 }
 
-function pixel(x, y, color = 'yellow') {
+function pixel(x, y, color = 'red') {
   context.fillStyle = color;
-  context.fillRect(x * screen.scale + 1, y * screen.scale + 1, 1, 1);
+  context.fillRect(x * screen.scale + screen.scale / 2 - 2,
+    y * screen.scale + + screen.scale / 2 - 2, 4, 4);
 }
 
-function cell(x, y, color = 'yellow') {
+function cell(x, y, color = 'red') {
   context.fillStyle = color;
-  context.fillRect(x * screen.scale, y * screen.scale, screen.scale, screen.scale);
+  context.fillRect(x * screen.scale,
+    y * screen.scale, screen.scale, screen.scale);
 }
+
+// function pixel(x, y, color = 'yellow') {
+//   context.fillStyle = color;
+//   context.fillRect(x * screen.scale + 1, y * screen.scale + 1, 1, 1);
+// }
+
+// function cell(x, y, color = 'yellow') {
+//   context.fillStyle = color;
+//   context.fillRect(x * screen.scale, y * screen.scale, screen.scale, screen.scale);
+// }
 
 // context.fillStyle = 'black';
 // context.fillRect(0, 0, screen.width, screen.height);
@@ -44,9 +56,11 @@ function cell(x, y, color = 'yellow') {
 
 // context.clearRect(0, 0, 500, 500)
 
+const FRAMES_EAT_GHOSTS = 40;
+
 let mapStrings =
   `BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-BS                 B                  BB
+B                  B                  BB
 B BBBBBBB BBBBBBBB B BBBBBBBB BBBBBBB BB
 B BBBBBBB BBBBBBBB B BBBBBBBB BBBBBBB BB
 BPBBBBBBB BBBBBBBB B BBBBBBBB BBBBBBBPBB
@@ -149,11 +163,11 @@ class Pacman extends Entity {
     this.color = 'yellow';
     this.dx = 1;
     this.dy = 0;
-    this.eatGhosts = false;
+    this.eatGhosts = 0;
   }
 
   render() {
-    cell(this.x, this.y, this.color);
+    drawPacman((this.x + 0.5) * screen.scale, (this.y + 0.5) * screen.scale, this.color, context);
   }
 
   update() {
@@ -179,14 +193,17 @@ class Pacman extends Entity {
       this.x = x_new;
       this.y = y_new;
     }
+    if (this.eatGhosts > 0) {
+      this.eatGhosts--;
+    }
     for (let i = 0; i < entities.length; i++) {
       if (entities[i].x == this.x &&
         entities[i].y == this.y &&
-        entities[i] instanceof Fruit
-        || entities[i] instanceof Ghost
-        && this.eatGhosts) {
+        (entities[i] instanceof Fruit
+          || entities[i] instanceof Ghost
+          && this.eatGhosts)) {
         if (entities[i].yummy) {
-          this.eatGhosts = true;
+          this.eatGhosts = FRAMES_EAT_GHOSTS;
         }
         remove(entities[i])
       }
@@ -204,11 +221,11 @@ class Ghost extends Entity {
   }
 
   render() {
-    cell(this.x, this.y, this.color);
+    drawGhost(this.x * screen.scale, this.y * screen.scale, this.color, undefined, context);
   }
 
   update() {
-    if(pacman.eatGhosts) {
+    if (pacman.eatGhosts) {
       this.color = 'aqua';
     } else {
       this.color = 'red';
@@ -259,16 +276,22 @@ class Ghost extends Entity {
 
 class Map extends Entity {
   render() {
-    const rows = mapNumbers.length;
-    const cols = mapNumbers[0].length;
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        if (mapNumbers[row][col] !== 0) {
-          cell(this.x + col, this.y + row, this.color);
-        }
-      }
+    context.strokeStyle = 'aqua';
+    for (let i = 0; i < paths.length; i++) {
+      context.stroke(paths[i]);
     }
   }
+  // render() {
+  //   const rows = mapNumbers.length;
+  //   const cols = mapNumbers[0].length;
+  //   for (let row = 0; row < rows; row++) {
+  //     for (let col = 0; col < cols; col++) {
+  //       if (mapNumbers[row][col] !== 0) {
+  //         cell(this.x + col, this.y + row, this.color);
+  //       }
+  //     }
+  //   }
+  // }
 }
 
 class Fruit extends Entity {
@@ -317,7 +340,7 @@ for (let j = 0; j < maxH; j++) {
       let fruit = new Fruit();
       fruit.x = i;
       fruit.y = j;
-      if (mapStrings[j][i] === 'S') {
+      if (mapStrings[j][i] === 'P') {
         fruit.makeYummy()
       }
       add(fruit);
@@ -403,6 +426,76 @@ document.addEventListener('keyup', function (event) {
       break;
   }
 });
+
+let paths = [];
+
+let was = [];
+for (let j = 0; j < maxH; j++) {
+  was.push([]);
+}
+
+function addLine(startRow, startCol, startDirection) {
+  const scale = screen.scale;
+
+  const path = new Path2D();
+
+  let row = startRow;
+  let col = startCol;
+  let direction = startDirection;
+  let first = true;
+  do {
+    was[row][col] = true;
+
+    const left = (direction + 3) % 4;
+    const right = (direction + 1) % 4;
+
+    if (first) {
+      path.moveTo((col + 0.5) * scale + (dir_x[left] - dir_x[direction]) * scale * 0.4,
+        (row + 0.5) * scale + (dir_y[left] - dir_y[direction]) * scale * 0.4);
+      first = false;
+    } else {
+      path.lineTo((col + 0.5) * scale + (dir_x[left] - dir_x[direction]) * scale * 0.4,
+        (row + 0.5) * scale + (dir_y[left] - dir_y[direction]) * scale * 0.4);
+    }
+
+    dir_love[0] = (direction + 3) % 4;
+    dir_love[1] = direction;
+    dir_love[2] = (direction + 1) % 4;
+    dir_love[3] = (direction + 2) % 4;
+
+    for (let i = 0; i < 4; i++) {
+      const dir = dir_love[i];
+      const dx = dir_x[dir];
+      const dy = dir_y[dir];
+
+      const x_old = col;
+      const y_old = row;
+      const x_new = x_old + dx;
+      const y_new = y_old + dy;
+      if (y_new >= 0 && y_new < mapNumbers.length
+        && mapNumbers[y_new][x_new] === 1) {
+        col = x_new;
+        row = y_new;
+        direction = dir;
+        break;
+      }
+    }
+  } while (row !== startRow
+    || col !== startCol);
+  path.closePath();
+  paths.push(path);
+}
+
+for (let j = 1; j < maxH; j++) {
+  for (let i = 0; i < maxW; i++) {
+    if (j < mapNumbers.length &&
+      mapNumbers[j][i] === 1 &&
+      mapNumbers[j - 1][i] === 0) {
+      if (!was[j][i])
+        addLine(j, i, 0);
+    }
+  }
+}
 
 frame()
 
