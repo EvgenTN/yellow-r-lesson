@@ -2,9 +2,10 @@ const canvas = document.createElement('canvas');
 document.body.appendChild(canvas);
 
 var screen = {
-  width: 40,
-  height: 41,
-  zoom: 24
+  width: 40 * 3,
+  height: 41 * 3,
+  zoom: 6,
+  scale: 3,
 }
 
 canvas.width = screen.width;
@@ -23,7 +24,12 @@ function clear() {
 
 function pixel(x, y, color = 'yellow') {
   context.fillStyle = color;
-  context.fillRect(x, y, 1, 1);
+  context.fillRect(x * screen.scale + 1, y * screen.scale + 1, 1, 1);
+}
+
+function cell(x, y, color = 'yellow') {
+  context.fillStyle = color;
+  context.fillRect(x * screen.scale, y * screen.scale, screen.scale, screen.scale);
 }
 
 // context.fillStyle = 'black';
@@ -40,7 +46,7 @@ function pixel(x, y, color = 'yellow') {
 
 let mapStrings =
   `BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-B                  B                  BB
+BS                 B                  BB
 B BBBBBBB BBBBBBBB B BBBBBBBB BBBBBBB BB
 B BBBBBBB BBBBBBBB B BBBBBBBB BBBBBBB BB
 BPBBBBBBB BBBBBBBB B BBBBBBBB BBBBBBBPBB
@@ -143,6 +149,11 @@ class Pacman extends Entity {
     this.color = 'yellow';
     this.dx = 1;
     this.dy = 0;
+    this.eatGhosts = false;
+  }
+
+  render() {
+    cell(this.x, this.y, this.color);
   }
 
   update() {
@@ -168,6 +179,18 @@ class Pacman extends Entity {
       this.x = x_new;
       this.y = y_new;
     }
+    for (let i = 0; i < entities.length; i++) {
+      if (entities[i].x == this.x &&
+        entities[i].y == this.y &&
+        entities[i] instanceof Fruit
+        || entities[i] instanceof Ghost
+        && this.eatGhosts) {
+        if (entities[i].yummy) {
+          this.eatGhosts = true;
+        }
+        remove(entities[i])
+      }
+    }
   }
 }
 
@@ -180,24 +203,54 @@ class Ghost extends Entity {
     this.direction = 0;
   }
 
+  render() {
+    cell(this.x, this.y, this.color);
+  }
+
   update() {
+    if(pacman.eatGhosts) {
+      this.color = 'aqua';
+    } else {
+      this.color = 'red';
+    }
     dir_love[0] = (this.direction + 3) % 4;
     dir_love[1] = this.direction;
     dir_love[2] = (this.direction + 1) % 4;
     dir_love[3] = (this.direction + 2) % 4;
 
-    const dx = dir_x[this.direction];
-    const dy = dir_y[this.direction];
-
-    const x_old = this.x;
-    const y_old = this.y;
-    const x_new = x_old + dx;
-    const y_new = y_old + dy;
-    if (y_new < 0 || y_new >= mapNumbers.length
-      || mapNumbers[y_new][x_new] !== 1) {
-      this.x = x_new;
-      this.y = y_new;
+    if (Math.random() < 0.2) {
+      dir_love[0] = (this.direction + 1) % 4;
+      dir_love[1] = this.direction;
+      dir_love[2] = (this.direction + 3) % 4;
+      dir_love[3] = (this.direction + 2) % 4;
     }
+
+    for (let i = 0; i < 4; i++) {
+      const dir = dir_love[i];
+      const dx = dir_x[dir];
+      const dy = dir_y[dir];
+
+      const x_old = this.x;
+      const y_old = this.y;
+      const x_new = x_old + dx;
+      const y_new = y_old + dy;
+      if (y_new < 0 || y_new >= mapNumbers.length
+        || mapNumbers[y_new][x_new] !== 1) {
+        this.x = x_new;
+        this.y = y_new;
+        this.direction = dir;
+        break;
+      }
+      for (let i = 0; i < entities.length; i++) {
+        if (entities[i].x == this.x &&
+          entities[i].y == this.y &&
+          entities[i] instanceof Pacman &&
+          !entities[i].eatGhosts) {
+          remove(entities[i])
+        }
+      }
+    }
+
     // if (this.y >= mapNumbers.length || mapNumbers[this.y][this.x + 1] !== 1) {
     //   this.x++;
     // }
@@ -211,11 +264,25 @@ class Map extends Entity {
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         if (mapNumbers[row][col] !== 0) {
-          pixel(this.x + col, this.y + row, this.color);
+          cell(this.x + col, this.y + row, this.color);
         }
       }
     }
   }
+}
+
+class Fruit extends Entity {
+  constructor() {
+    super();
+    this.color = 'white';
+    this.yummy = 0;
+  }
+
+  makeYummy() {
+    this.yummy = 1;
+    this.color = 'lime';
+  }
+
 }
 
 let entities = [];
@@ -241,9 +308,26 @@ add(pacman);
 pacman.x = 1;
 pacman.y = 2;
 
+const maxW = screen.width / screen.scale;
+const maxH = screen.height / screen.scale;
+
+for (let j = 0; j < maxH; j++) {
+  for (let i = 0; i < maxW; i++) {
+    if (j >= 0 && j < mapNumbers.length && mapNumbers[j][i] === 0) {
+      let fruit = new Fruit();
+      fruit.x = i;
+      fruit.y = j;
+      if (mapStrings[j][i] === 'S') {
+        fruit.makeYummy()
+      }
+      add(fruit);
+    }
+  }
+}
+
 for (let i = 0; i < 20; i++) {
-  let x = Math.floor(Math.random() * screen.width)
-  let y = Math.floor(Math.random() * screen.height)
+  let x = Math.floor(Math.random() * maxW)
+  let y = Math.floor(Math.random() * maxH)
   if (y < mapNumbers.length && mapNumbers[y][x] === 1) {
     continue;
   }
@@ -252,6 +336,17 @@ for (let i = 0; i < 20; i++) {
   ghost.y = y;
   add(ghost);
 }
+
+// for (let j=0; j<maxH; j++) {
+//   for (let i=0; i<maxW; i++) {
+//     if (j>=0 && j<mapNumbers.length && mapNumbers[j][i] === 0) {
+//       let ghost = new Fruit();
+//       ghost.x = i;
+//       ghost.y = j;
+//       add(ghost);
+//     }
+//   }
+// }
 
 function frame() {
   for (let i = 0; i < entities.length; i++) {
